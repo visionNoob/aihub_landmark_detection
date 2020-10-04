@@ -15,6 +15,7 @@ random.seed(42)
 
 
 def main(args):
+    print("Hello world!")
     dataset_name = args.dataset
     dataset = os.path.join(
         '/home/ubuntu/workspace_aihub/data/raw/', dataset_name)
@@ -86,14 +87,20 @@ def main(args):
 
                 rand_number = random.randint(0, 9)
                 if rand_number == 0:
-                    mode = 'test_dataset'
+                    mode = 'test2'
                 elif rand_number == 1:
-                    mode = 'validation_dataset'
+                    mode = 'val2'
                 else:
-                    mode = 'train_dataset'
+                    mode = 'train2'
+
+                base_name = (os.path.basename(base_name)).replace('-', '_')
+                label = base_name.split('_')[0]
 
                 dst_path = os.path.join(
-                    '/home/ubuntu/workspace_aihub/data/refined', mode)
+                    '/home/ubuntu/workspace_aihub/data/refined', mode, label)
+
+                if not os.path.isdir(dst_path):
+                    os.mkdir(dst_path)
 
                 OmegaConf.save(conf, os.path.join(
                     dst_path, f'{os.path.basename(base_name)}.yaml'))
