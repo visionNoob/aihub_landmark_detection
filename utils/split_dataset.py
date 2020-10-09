@@ -41,6 +41,10 @@ def main(args):
             conf = OmegaConf.create()
             image = cv2.imread(image_file)
 
+            if image is None:
+                print('no image!')
+                continue
+
             if len(image.shape) != 3:
                 print('this image dose not have 3 chennels')
 
