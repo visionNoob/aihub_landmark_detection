@@ -136,15 +136,14 @@ print(inference_on_dataset(trainer.model, test_loader, evaluator))
 
 
 
-exit()
-for d in random.sample(dataset_dicts, 30):    
-    im = cv2.imread(d["file_name"])
-    outputs = predictor(im)  # format is documented at https://detectron2.readthedocs.io/tutorials/models.html#model-output-format
-
-    print('PRED:', str(thing_classes[outputs["instances"].to("cpu").pred_classes]).encode('utf-8'))
-    print('Score: ', outputs["instances"].to("cpu").scores)
-    print('LABEL:', str(thing_classes[d['annotations'][0]['category_id']]).encode('utf-8'))
-
+#for d in random.sample(dataset_dicts, 30):    
+#    im = cv2.imread(d["file_name"])
+#    outputs = predictor(im)  # format is documented at https://detectron2.readthedocs.io/tutorials/models.html#model-output-format
+#
+#    print('PRED:', str(thing_classes[outputs["instances"].to("cpu").pred_classes]).encode('utf-8'))
+#    print('Score: ', outputs["instances"].to("cpu").scores)
+#    print('LABEL:', str(thing_classes[d['annotations'][0]['category_id']]).encode('utf-8'))
+#
 
     
 
