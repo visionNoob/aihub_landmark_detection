@@ -3,7 +3,7 @@ from detectron2.structures import BoxMode
 import random
 import cv2
 import json
-import os
+import os, glob
 from detectron2.data import MetadataCatalog, DatasetCatalog
 from detectron2.utils.visualizer import Visualizer
 from detectron2.utils.visualizer import ColorMode
@@ -26,7 +26,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from PIL import ImageFont, ImageDraw, Image
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["CUDA_VISIBLE_DEVICES"] = '2'
 
 def get_dataset_dicts(config_dir):
 
@@ -38,7 +38,6 @@ def get_dataset_dicts(config_dir):
     for idx, row in tqdm(df.iterrows(), total=len(df)):
 #        if idx == 1000:
 #            break
-            
         record = {}
         filename = row.image_path
         height, width = 480, 640
@@ -72,7 +71,7 @@ thing_classes = list(np.load('./dataset/trainval_classes.npy', allow_pickle=True
 #thing_classes = list(np.load('./dataset/thing_classes.npy', allow_pickle=True))
 for d in ["test"]:
     DatasetCatalog.register(
-        "aihub_" + d, lambda d=d: get_dataset_dicts(f"dataset/{d}_dataframe.csv"))
+        "aihub_" + d, lambda d=d: get_dataset_dicts(f"dataset/filtered_{d}_dataframe.csv"))
     MetadataCatalog.get("aihub_" + d).set(thing_classes=thing_classes)
 
 aihub_metadata = MetadataCatalog.get("aihub_test")
@@ -118,20 +117,38 @@ cfg.MODEL.RETINANET.BBOX_REG_LOSS_TYPE = "smooth_l1"
 # Only supports GN until unshared norm is implemented
 cfg.MODEL.RETINANET.NORM = ""
 
-#cfg.MODEL.WEIGHTS = os.path.join(cfg.OUTPUT_DIR, "model_0184999.pth")
-cfg.MODEL.WEIGHTS = os.path.join(cfg.OUTPUT_DIR, "model_1374999.pth")
+
 cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.85   # set a custom testing threshold
 cfg.MODEL.RETINANET.SCORE_THRESH_TEST = 0.25
 #cfg.MODEL.DEVICE='cpu'
 cfg.MODEL.DEVICE='cuda'
-predictor = DefaultPredictor(cfg)
-trainer = DefaultTrainer(cfg)
+
+weight_list = []
+for item in glob.glob("./output/model_*.pth"):
+    weight_list.append(os.path.basename(item))
+maxAP = 0.0
+maxName = ""
+
+print(weight_list)
+
+for idx, weight in enumerate(weight_list):
+    cfg.MODEL.WEIGHTS = os.path.join(cfg.OUTPUT_DIR, weight)
+    predictor = DefaultPredictor(cfg)
+
+    evaluator = COCOEvaluator("aihub_test", cfg, False, output_dir="./output/")
+    test_loader = build_detection_test_loader(cfg, "aihub_test")
+
+    infer = inference_on_dataset(predictor.model, test_loader, evaluator)
+    if maxAP < infer['bbox']['AP']:
+        maxAP = infer['bbox']['AP']
+        maxName = weight
+        print("max changed:", maxName,"(AP:",maxAP, ")")
+
+print("Final result!")
+print("name:", maxName)
+print("AP:", maxAP)
 
 
-evaluator = COCOEvaluator("aihub_test", cfg, False, output_dir="./output/")
-test_loader = build_detection_test_loader(cfg, "aihub_test")
-
-print(inference_on_dataset(trainer.model, test_loader, evaluator))
 # another equivalent way to evaluate the model is to use `trainer.test`
 
 
