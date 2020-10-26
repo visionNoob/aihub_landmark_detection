@@ -32,71 +32,19 @@ import matplotlib.pyplot as plt
 from PIL import ImageFont, ImageDraw, Image
 
 #TODO needs to change 0
-os.environ["CUDA_VISIBLE_DEVICES"] = '1'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 flags.DEFINE_string('i', '', 'path to input image folder')
-
-def get_dataset_dicts(config_dir):
-
-    df = pd.read_csv(config_dir)
-
-    class_mapper = np.load('./dataset/trainval_classes.npy', allow_pickle=True)
-    dataset_dicts = []
-    
-    for idx, row in tqdm(df.iterrows(), total=len(df)):
-#        if idx == 1000:
-#            break
-        record = {}
-        filename = row.image_path
-        height, width = 480, 640
-
-        #Parse data filename
-        record["file_name"] = filename
-        record["image_id"] = idx
-        record["height"] = height
-        record["width"] = width
-
-        objs = []
-        x1 = row.bbox_x1
-        y1 = row.bbox_y1
-        x2 = row.bbox_x2
-        y2 = row.bbox_y2
-
-        poly = [373.5, 618.5, 358.5, 608.5, 343.5, 607.5, 326.5, 609.5, 314.5, 622.5, 298.5, 639.5, 286.5, 653.5, 295.5, 673.5, 296.5, 678.5, 433.5, 678.5, 427.5, 667.5, 413.5, 653.5, 391.5, 632.5, 373.5, 618.5]
-        obj = {
-            "bbox": [x1, y1, x2, y2],
-            "bbox_mode": BoxMode.XYXY_ABS,
-            "segmentation": [poly],
-            "category_id": np.where(class_mapper == row['class'])[0][0],
-        }
-        objs.append(obj)
-        record["annotations"] = objs
-        dataset_dicts.append(record)
-    return dataset_dicts
 
 def main(_argv):
     class2idx = dict()
-    with open('./dataset/class_numbering.csv', "rt", encoding='euc-kr', ) as f: 
+    with open('./data/class_numbering.csv', "rt", encoding='euc-kr', ) as f: 
         reader = csv.reader(f, delimiter=',') 
         for i, line in enumerate(reader):
             if i == 0:
                 continue
             class2idx[line[0]] = line[2]
 
-    thing_classes = np.load('./dataset/trainval_classes.npy', allow_pickle=True)
-
-#    a = set(class2idx.keys()) - set(thing_classes)
-#    print("miss class:", a)
-#    b = set(thing_classes) - set(class2idx.keys())
-#    print("Ours:", b)
-#    exit()
-
-#    for d in ["test"]:
-#        DatasetCatalog.register(
-#            "aihub_" + d, lambda d=d: get_dataset_dicts(f"dataset/filtered_{d}_dataframe.csv"))
-#        MetadataCatalog.get("aihub_" + d).set(thing_classes=thing_classes)
-
-#aihub_metadata = MetadataCatalog.get("aihub_test")
-#dataset_dicts = get_dataset_dicts(f"dataset/test_dataframe.csv")
+    thing_classes = np.load('./data/trainval_classes.npy', allow_pickle=True)
 
     cfg = get_cfg()
     cfg.merge_from_file(model_zoo.get_config_file(
@@ -138,10 +86,11 @@ def main(_argv):
     cfg.MODEL.RETINANET.NORM = ""
 
     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.85   # set a custom testing threshold
-    cfg.MODEL.RETINANET.SCORE_THRESH_TEST = 0.25
+    cfg.MODEL.RETINANET.SCORE_THRESH_TEST = 0.01
     cfg.MODEL.DEVICE='cuda'
+#cfg.MODEL.DEVICE='cpu'
 
-    cfg.MODEL.WEIGHTS = os.path.join(cfg.OUTPUT_DIR,'model_1864999.pth')
+    cfg.MODEL.WEIGHTS = os.path.join('data','model_2589999.pth')
 
     # Set model
     predictor = DefaultPredictor(cfg)
@@ -168,16 +117,13 @@ def main(_argv):
     for item in files:
         im = cv2.imread(item)
         h, w,_ = im.shape
-        # TODO Save scaling information
         ratio = 1/max(h/480 , w/640)
-        # TODO Resize image
-        im = cv2.resize(im, (0,0), ratio, ratio)
+        im = cv2.resize(im, None, fx = ratio, fy = ratio, interpolation=cv2.INTER_CUBIC)
         h_prime, w_prime, _ = im.shape 
 
         outputs = predictor(im)  # format is documented at https://detectron2.readthedocs.io/tutorials/models.html#model-output-format
 
         # Parse outputs
-#print('PRED:', str(thing_classes[outputs["instances"].to("cpu").pred_classes]).encode('utf-8'))
         filename = os.path.basename(item)
         #Set emtpy initial value
         classID = ''
@@ -185,36 +131,39 @@ def main(_argv):
         bbox = ['','','','']
 
         scores = outputs["instances"].to("cpu").scores.tolist()
-        print(item, scores)
         if len(scores) > 0:
-            idx = scores.index(max(scores))
-            candidate =  thing_classes[outputs["instances"].to("cpu").pred_classes]
+            # Get Top 10 result
+            confidence = scores[:10]
+            candidate =  thing_classes[outputs["instances"].to("cpu").pred_classes[:10]]
 
             if isinstance(candidate, str):
                 class_name = candidate
             else:
-                class_name = thing_classes[outputs["instances"].to("cpu").pred_classes][idx]
+                class_name = thing_classes[outputs["instances"].to("cpu").pred_classes[:10]].tolist()
 
-            confidence = scores[idx]
-            # Get first bbox item
-            bbox = outputs["instances"].to("cpu").pred_boxes[idx].tensor.tolist()[0]
-            # TODO restore bbox
+            # Get bbox
+            bbox = outputs["instances"].to("cpu").pred_boxes.tensor.tolist()[:10]
 
-            print('PRED:', class_name)
-            print('Score: ', confidence)
-            print("filename:", filename)
+        for cname, conf, box in zip(class_name, confidence, bbox):
+            # Restore bbox
+            x1, y1, x2, y2 = box
+
+            x1 = x1/w_prime * w
+            x2 = x2/w_prime * w
+            y1 = y1/h_prime * h
+            y2 = y2/h_prime * h
+
+            box = [x1, y1, x2, y2]
 
             # Change class to official index
-            if class_name in class2idx.keys(): 
-                classID = class2idx[class_name]
-            print("official_class", classID)
-    
+            if cname in class2idx.keys(): 
+                classID = class2idx[cname]
 
-        # Make csv (filename, class_ID,, Confidence, bbox_left_top_x, bbox_left_top_y, bbox_right_bottom_x, bbox_right_bottom_y)
-        result = [filename, classID, confidence] + bbox
-        row = ','.join(str(x) for x in result) + '\n'
-        print(row)
-        f.write(row)
+            # Make csv (filename, class_ID,, Confidence, bbox_left_top_x, bbox_left_top_y, bbox_right_bottom_x, bbox_right_bottom_y)
+            result = [filename, classID, conf] + box
+            row = ','.join(str(x) for x in result) + '\n'
+#print(row)
+            f.write(row)
 
 if __name__ == '__main__':
     try:
